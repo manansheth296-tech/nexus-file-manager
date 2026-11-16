@@ -1,0 +1,26 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+.venv/
+ENV/
+
+# Distribution / packaging
+build/
+dist/
+*.egg-info/
+
+# Large archives and temporary test captures
+*.zip
+test_*.png
+root_test.png
+
+# IDE and OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
