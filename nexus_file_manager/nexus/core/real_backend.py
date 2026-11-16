@@ -47,17 +47,30 @@ class RealBackend(BackendHooks):
                     usage = psutil.disk_usage(part.mountpoint)
                     label = part.mountpoint
                     if sys.platform.startswith("win"):
+                        vol = ""
                         try:
-                            import ctypes
-                            buf = ctypes.create_unicode_buffer(1024)
-                            ctypes.windll.kernel32.GetVolumeInformationW(
-                                part.mountpoint, buf, 1024, None, None, None, None, 0
-                            )
-                            vol = buf.value.strip()
-                            letter = part.mountpoint.rstrip("\\")
-                            label = f"{vol} ({letter})" if vol else f"Local Disk ({letter})"
+                            import win32api
+                            vol_info = win32api.GetVolumeInformation(part.mountpoint)
+                            vol = vol_info[0].strip() if vol_info else ""
                         except Exception:
-                            label = part.mountpoint
+                            try:
+                                import ctypes
+                                from ctypes import wintypes
+                                kernel32 = ctypes.windll.kernel32
+                                GetVolumeInfo = kernel32.GetVolumeInformationW
+                                GetVolumeInfo.argtypes = [
+                                    wintypes.LPCWSTR, wintypes.LPWSTR, wintypes.DWORD,
+                                    wintypes.LPDWORD, wintypes.LPDWORD, wintypes.LPDWORD,
+                                    wintypes.LPWSTR, wintypes.DWORD
+                                ]
+                                GetVolumeInfo.restype = wintypes.BOOL
+                                buf = ctypes.create_unicode_buffer(512)
+                                if GetVolumeInfo(part.mountpoint, buf, 512, None, None, None, None, 0):
+                                    vol = buf.value.strip()
+                            except Exception:
+                                vol = ""
+                        letter = part.mountpoint.rstrip("\\")
+                        label = f"{vol} ({letter})" if vol else f"Local Disk ({letter})"
                     drives.append({
                         "label": label,
                         "path": part.mountpoint,

@@ -1,4 +1,8 @@
-"""Build and package Nexus File Manager into a standalone desktop application (.exe)."""
+"""
+Build and package Nexus File Manager into standalone executables (.exe):
+1. onedir distribution: dist/NexusFileManager/ (for installer packaging)
+2. onefile standalone: dist/Nexus.exe (single portable .exe to send directly to friends)
+"""
 
 import argparse
 import os
@@ -13,15 +17,18 @@ BUILD_DIR = ROOT_DIR / "build"
 ICON_PATH = ROOT_DIR / "assets" / "icon.ico"
 
 
-def build_app(onefile: bool = False):
-    print("=" * 60)
-    print("[*] Packaging Nexus File Manager as Standalone Executable")
-    print("=" * 60)
+def build_app(onefile: bool = False, app_name: str | None = None):
+    target_name = app_name or ("Nexus" if onefile else "NexusFileManager")
+    mode_str = "Single-File Portable Executable" if onefile else "Directory Distribution"
+
+    print("=" * 65)
+    print(f"[*] Packaging Nexus File Manager: {mode_str} ({target_name}.exe)")
+    print("=" * 65)
 
     # Ensure icon exists
     if not ICON_PATH.exists():
-        from create_icon import create_app_icon
-        create_app_icon()
+        from create_icon import create_nexus_icon
+        create_nexus_icon()
 
     nexus_dir = ROOT_DIR / "nexus_file_manager"
     icons_dir = nexus_dir / "nexus" / "assets" / "icons"
@@ -30,7 +37,7 @@ def build_app(onefile: bool = False):
     cmd = [
         sys.executable,
         "-m", "PyInstaller",
-        "--name=NexusFileManager",
+        f"--name={target_name}",
         "--windowed",                 # No console window popup
         "--clean",
         "--noconfirm",
@@ -62,6 +69,7 @@ def build_app(onefile: bool = False):
         "--hidden-import=openpyxl",
         "--hidden-import=win32com",
         "--hidden-import=win32com.client",
+        "--hidden-import=win32api",
         str(ROOT_DIR / "run.py"),
     ]
 
@@ -74,16 +82,17 @@ def build_app(onefile: bool = False):
     result = subprocess.run(cmd)
 
     if result.returncode == 0:
-        print("\n" + "=" * 60)
+        print("\n" + "=" * 65)
         print("[+] Build Completed Successfully!")
         if onefile:
-            exe_path = DIST_DIR / "NexusFileManager.exe"
-            print(f"[+] Standalone Executable: {exe_path}")
+            exe_path = DIST_DIR / f"{target_name}.exe"
+            print(f"[+] Portable Single-File Executable: {exe_path}")
         else:
-            exe_path = DIST_DIR / "NexusFileManager" / "NexusFileManager.exe"
-            print(f"[+] Application Directory: {DIST_DIR / 'NexusFileManager'}")
+            exe_path = DIST_DIR / target_name / f"{target_name}.exe"
+            print(f"[+] Application Directory: {DIST_DIR / target_name}")
             print(f"[+] Executable: {exe_path}")
-        print("=" * 60)
+        print("=" * 65)
+        return exe_path
     else:
         print(f"\n[-] Build Failed with exit code {result.returncode}")
         sys.exit(result.returncode)
@@ -91,6 +100,12 @@ def build_app(onefile: bool = False):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Build Nexus File Manager")
-    parser.add_argument("--onefile", action="store_true", help="Build single standalone .exe")
+    parser.add_argument("--onefile", action="store_true", help="Build single standalone portable .exe")
+    parser.add_argument("--both", action="store_true", help="Build both onedir and portable onefile")
     args = parser.parse_args()
-    build_app(onefile=args.onefile)
+
+    if args.both:
+        build_app(onefile=False)
+        build_app(onefile=True)
+    else:
+        build_app(onefile=args.onefile)

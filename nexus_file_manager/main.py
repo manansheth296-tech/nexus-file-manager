@@ -59,6 +59,18 @@ def main(argv: list[str] | None = None) -> int:
     app = QApplication(sys.argv[:1])
     app.setApplicationName("Nexus File Manager")
 
+    # Set Window, Alt-Tab, and Taskbar Application Icon
+    for c in (
+        Path(__file__).resolve().parent / "nexus" / "assets" / "icon.png",
+        Path(__file__).resolve().parent.parent / "assets" / "icon.png",
+        Path(sys.executable).parent / "assets" / "icon.png",
+        Path(getattr(sys, "_MEIPASS", "")) / "assets" / "icon.png",
+    ):
+        if c and c.exists():
+            from PyQt6.QtGui import QIcon
+            app.setWindowIcon(QIcon(str(c)))
+            break
+
     splash = None
     if not (args.grab or args.gallery or args.no_splash):
         from nexus.components.splash_screen import NexusSplashScreen

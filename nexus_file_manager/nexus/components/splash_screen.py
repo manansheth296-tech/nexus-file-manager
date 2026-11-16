@@ -145,6 +145,23 @@ class NexusSplashScreen(QWidget):
         p.drawRoundedRect(rect, t.RADIUS_XL, t.RADIUS_XL)
 
         # App Icon in top-left
-        icon_pm = icon_loader.render_pixmap("folder", t.COLOR_ACCENT_PRIMARY, 28)
-        p.drawPixmap(SPACE_XL, SPACE_XL - 2, icon_pm)
+        drawn = False
+        import sys
+        from pathlib import Path
+        for c in (
+            Path(__file__).resolve().parent.parent / "assets" / "icon.png",
+            Path(__file__).resolve().parent.parent.parent.parent / "assets" / "icon.png",
+            Path(getattr(sys, "_MEIPASS", "")) / "assets" / "icon.png",
+            Path(sys.executable).parent / "assets" / "icon.png",
+        ):
+            if c and c.exists():
+                icon_img = QPixmap(str(c))
+                if not icon_img.isNull():
+                    scaled = icon_img.scaled(32, 32, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation)
+                    p.drawPixmap(SPACE_XL, SPACE_XL - 4, scaled)
+                    drawn = True
+                    break
+        if not drawn:
+            icon_pm = icon_loader.render_pixmap("folder", t.COLOR_ACCENT_PRIMARY, 28)
+            p.drawPixmap(SPACE_XL, SPACE_XL - 2, icon_pm)
         p.end()
