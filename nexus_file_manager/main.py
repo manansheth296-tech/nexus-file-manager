@@ -53,10 +53,19 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--mock", action="store_true", help="use mock data instead of real filesystem")
     ap.add_argument("--path", default=None, help="initial folder path to open")
     ap.add_argument("--grab", metavar="PNG", help="save a screenshot and exit")
+    ap.add_argument("--no-splash", action="store_true", help="skip the launcher splash screen")
     args = ap.parse_args(argv)
 
     app = QApplication(sys.argv[:1])
     app.setApplicationName("Nexus File Manager")
+
+    splash = None
+    if not (args.grab or args.gallery or args.no_splash):
+        from nexus.components.splash_screen import NexusSplashScreen
+        splash = NexusSplashScreen()
+        splash.show()
+        splash.set_progress(25, "Loading theme engines & appearance...")
+
     tm = theme_manager()
     aliases = {
         "midnight": "Midnight Cyber",
@@ -78,7 +87,11 @@ def main(argv: list[str] | None = None) -> int:
     if args.gallery:
         win = ComponentGallery()
     else:
+        if splash:
+            splash.set_progress(55, "Mounting system partitions & drives...")
         backend = None if args.mock else RealBackend()
+        if splash:
+            splash.set_progress(80, "Initializing workspace...")
         win = MainWindow(backend=backend, persist=not (args.grab or forced))
         if args.size:
             w, h = (int(v) for v in args.size.lower().split("x"))
@@ -91,7 +104,11 @@ def main(argv: list[str] | None = None) -> int:
             win.explorer.select_names(args.select)
         if args.page == "storage":
             win._on_tool("storage_doctor")
-    win.show()
+
+    if splash:
+        splash.finish_and_show(win)
+    else:
+        win.show()
     dlg = None
     if args.dialog and not args.gallery:
         dlg = _open_dialog(win, args.dialog, args.query, bool(args.grab))

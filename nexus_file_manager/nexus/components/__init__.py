@@ -14,3 +14,4 @@ from nexus.components.scrim import Scrim  # noqa: F401
 from nexus.components.segmented_tabs import SegmentedTabs  # noqa: F401
 from nexus.components.stage_indicator import StageIndicator  # noqa: F401
 from nexus.components.theme_widgets import AccentChip, PaletteSwatch, ThemeThumbnail  # noqa: F401
+from nexus.components.splash_screen import NexusSplashScreen  # noqa: F401
