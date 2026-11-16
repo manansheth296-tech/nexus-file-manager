@@ -2,17 +2,21 @@
 MainWindow – composes TopBar, Sidebar, Explorer / Storage Doctor pages, Preview Inspector, StatusBar,
 and launches the modal dialogs (Duplicate Hunter, AI Organizer, Safe Locker, Semantic Search, Theme Store).
 
-Everything backend-facing goes through `BackendHooks` (core/backend.py) or is marked `# HOOK`.
-Dialog results flash status messages and invoke real backend capabilities when present.
+Everything backend-facing goes through `BackendHooks` (core/backend.py) or `RealBackend`.
+File operations (New Folder, New File, Cut, Copy, Paste, Delete, Rename) interact directly with the OS.
 """
 from __future__ import annotations
 
 import os
+import shutil
+import subprocess
+import sys
 from pathlib import Path
 
 from PyQt6.QtCore import QTimer
 from PyQt6.QtGui import QKeySequence, QShortcut
-from PyQt6.QtWidgets import QDialog, QHBoxLayout, QMainWindow, QStackedWidget, QVBoxLayout, QWidget
+from PyQt6.QtWidgets import (QDialog, QHBoxLayout, QInputDialog, QMainWindow,
+                             QMessageBox, QStackedWidget, QVBoxLayout, QWidget)
 
 from nexus.components import Divider, Scrim
 from nexus.core.backend import BackendHooks
@@ -46,6 +50,8 @@ class MainWindow(QMainWindow):
         self.history = NavigationHistory(start)
         self._inspector_wanted = True
         self._dialog: QDialog | None = None
+        self._clipboard_files: list[str] = []
+        self._clipboard_is_cut: bool = False
 
         self.top = TopBar()
         self.sidebar = Sidebar(backend=self.backend)
@@ -90,7 +96,7 @@ class MainWindow(QMainWindow):
 
     # ── wiring ────────────────────────────────────────────────────────────
     def _wire(self) -> None:
-        t, s = self.top, self.status
+        t, ex = self.top, self.explorer
         t.backRequested.connect(self.go_back)
         t.forwardRequested.connect(self.go_forward)
         t.upRequested.connect(self.go_up)
@@ -98,17 +104,28 @@ class MainWindow(QMainWindow):
         t.pathSubmitted.connect(self.navigate)
         t.segmentActivated.connect(lambda i: self.navigate(join_path(t.segments[:i + 1])))
         t.filterChanged.connect(self._on_filter)
-        t.viewModeChanged.connect(self.explorer.set_mode)
+        t.viewModeChanged.connect(ex.set_mode)
         t.previewToggled.connect(self._on_preview_toggled)
         t.themePickerRequested.connect(self.open_theme_store)
         t.deepSearchRequested.connect(self.open_semantic_search)
-        t.newFolderRequested.connect(lambda: s.flash("HOOK: new_folder_requested"))
-        t.newFileRequested.connect(lambda: s.flash("HOOK: new_file_requested"))
+        t.newFolderRequested.connect(self.create_folder)
+        t.newFileRequested.connect(self.create_file)
 
         self.sidebar.locationRequested.connect(self.navigate)
         self.sidebar.toolRequested.connect(self._on_tool)
-        self.explorer.selectionChanged.connect(self._on_selection)
-        self.explorer.itemActivated.connect(self._on_item_activated)
+
+        ex.selectionChanged.connect(self._on_selection)
+        ex.itemActivated.connect(self._on_item_activated)
+        ex.newFolderRequested.connect(self.create_folder)
+        ex.newFileRequested.connect(self.create_file)
+        ex.renameRequested.connect(self.rename_file)
+        ex.deleteRequested.connect(self.delete_files)
+        ex.copyRequested.connect(self.copy_files)
+        ex.pasteRequested.connect(self.paste_files)
+        ex.openInTerminalRequested.connect(self.open_in_terminal)
+        ex.showInExplorerRequested.connect(self.show_in_explorer)
+        ex.lockRequested.connect(lambda f: self.open_safe_locker(mode="lock"))
+
         self.storage.scanRequested.connect(self._on_storage_scan)
         self.storage.targetRequested.connect(self._scan_storage_path)
 
@@ -162,13 +179,16 @@ class MainWindow(QMainWindow):
         self.status.set_selection_summary(self.explorer.item_count(), files)
 
     def _on_item_activated(self, f: dict) -> None:
-        if f["kind"] == "folder":
+        if f.get("kind") == "refresh":
+            self.refresh()
+            return
+        if f.get("kind") == "folder":
             self.navigate(join_path(split_path(self.history.current) + [f["name"]]))
         else:
             if hasattr(self.backend, "open_file"):
                 target_path = f.get("path") or join_path(split_path(self.history.current) + [f["name"]])
                 self.backend.open_file(target_path)
-            self.status.flash(f"HOOK: open_file_requested → {f['name']}")
+            self.status.flash(f"Opening: {f['name']}")
 
     def _on_storage_scan(self) -> None:
         self._scan_storage_path(self.history.current)
@@ -206,6 +226,128 @@ class MainWindow(QMainWindow):
         elif key == "encrypted_vault":
             self.open_safe_locker()
 
+    # ── CRUD operations ───────────────────────────────────────────────────
+    def create_folder(self) -> None:
+        name, ok = QInputDialog.getText(self, "New Folder", "Folder Name:", text="New Folder")
+        if ok and name.strip():
+            p = Path(self.history.current) / name.strip()
+            try:
+                p.mkdir(parents=True, exist_ok=False)
+                self.refresh()
+                self.explorer.select_names([p.name])
+                self.status.flash(f"Created folder: {p.name}")
+            except Exception as e:
+                self.status.flash(f"Error creating folder: {e}")
+
+    def create_file(self) -> None:
+        name, ok = QInputDialog.getText(self, "New File", "File Name:", text="New Document.txt")
+        if ok and name.strip():
+            p = Path(self.history.current) / name.strip()
+            try:
+                p.touch(exist_ok=False)
+                self.refresh()
+                self.explorer.select_names([p.name])
+                self.status.flash(f"Created file: {p.name}")
+            except Exception as e:
+                self.status.flash(f"Error creating file: {e}")
+
+    def rename_file(self, f: dict) -> None:
+        old_name = f["name"]
+        new_name, ok = QInputDialog.getText(self, "Rename", "New Name:", text=old_name)
+        if ok and new_name.strip() and new_name.strip() != old_name:
+            old_p = Path(f.get("path") or (Path(self.history.current) / old_name))
+            new_p = old_p.parent / new_name.strip()
+            try:
+                old_p.rename(new_p)
+                self.refresh()
+                self.explorer.select_names([new_p.name])
+                self.status.flash(f"Renamed: {old_name} -> {new_p.name}")
+            except Exception as e:
+                self.status.flash(f"Error renaming: {e}")
+
+    def delete_files(self, files: list[dict]) -> None:
+        names = ", ".join(f["name"] for f in files[:3])
+        if len(files) > 3:
+            names += f" and {len(files) - 3} more"
+        ret = QMessageBox.question(self, "Recycle Bin", f"Move {names} to Recycle Bin?",
+                                   QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
+        if ret == QMessageBox.StandardButton.Yes:
+            import send2trash
+            trashed = 0
+            for f in files:
+                p = f.get("path") or str(Path(self.history.current) / f["name"])
+                try:
+                    send2trash.send2trash(p)
+                    trashed += 1
+                except Exception as e:
+                    print(f"Failed to trash {p}: {e}")
+            self.status.flash(f"Moved {trashed} item(s) to Recycle Bin")
+            self.refresh()
+
+    def copy_files(self, files: list[dict], is_cut: bool = False) -> None:
+        self._clipboard_files = [f.get("path") or str(Path(self.history.current) / f["name"]) for f in files]
+        self._clipboard_is_cut = is_cut
+        action = "Cut" if is_cut else "Copied"
+        self.status.flash(f"{action} {len(files)} item(s) to clipboard")
+
+    def paste_files(self) -> None:
+        if not self._clipboard_files:
+            self.status.flash("Clipboard is empty")
+            return
+        cur = Path(self.history.current)
+        pasted = 0
+        for src_str in self._clipboard_files:
+            src = Path(src_str)
+            if not src.exists():
+                continue
+            dest = cur / src.name
+            if dest.exists() and dest != src:
+                stem, ext = src.stem, src.suffix
+                i = 1
+                while (cur / f"{stem} ({i}){ext}").exists():
+                    i += 1
+                dest = cur / f"{stem} ({i}){ext}"
+            try:
+                if self._clipboard_is_cut:
+                    shutil.move(str(src), str(dest))
+                else:
+                    if src.is_dir():
+                        shutil.copytree(str(src), str(dest))
+                    else:
+                        shutil.copy2(str(src), str(dest))
+                pasted += 1
+            except Exception as e:
+                print(f"Error pasting {src}: {e}")
+        if self._clipboard_is_cut:
+            self._clipboard_files = []
+        self.status.flash(f"Pasted {pasted} item(s)")
+        self.refresh()
+
+    def open_in_terminal(self) -> None:
+        p = str(Path(self.history.current))
+        try:
+            if sys.platform.startswith("win"):
+                subprocess.Popen(["cmd.exe", "/c", "start", "powershell.exe", "-NoExit", "-Command", f"Set-Location '{p}'"])
+            elif sys.platform == "darwin":
+                subprocess.Popen(["open", "-a", "Terminal", p])
+            else:
+                subprocess.Popen(["x-terminal-emulator", "--working-directory", p])
+            self.status.flash(f"Opened terminal at {p}")
+        except Exception as e:
+            self.status.flash(f"Failed to open terminal: {e}")
+
+    def show_in_explorer(self, f: dict) -> None:
+        p = f.get("path") or str(Path(self.history.current) / f["name"])
+        try:
+            if sys.platform.startswith("win"):
+                subprocess.Popen(["explorer.exe", f"/select,{p}"])
+            elif sys.platform == "darwin":
+                subprocess.Popen(["open", "-R", p])
+            else:
+                subprocess.Popen(["xdg-open", str(Path(p).parent)])
+        except Exception as e:
+            self.status.flash(f"Failed to show in explorer: {e}")
+
     # ── dialogs ───────────────────────────────────────────────────────────
     def _open_dialog(self, dlg: QDialog) -> QDialog:
         if self._dialog is not None:
@@ -226,27 +368,85 @@ class MainWindow(QMainWindow):
     def open_duplicate_hunter(self, animate: bool = True) -> DuplicateHunterDialog:
         d = DuplicateHunterDialog(self, root=self.history.current, animate=animate)
         d.scanRequested.connect(self.backend.duplicate_scan_requested)
-        d.trashRequested.connect(lambda paths: self.status.flash(f"HOOK: trash_requested → {len(paths)} files to Recycle Bin"))
+        d.trashRequested.connect(self._on_trash_duplicates)
         return self._open_dialog(d)
+
+    def _on_trash_duplicates(self, paths: list[str]) -> None:
+        import send2trash
+        trashed = 0
+        for p in paths:
+            try:
+                send2trash.send2trash(p)
+                trashed += 1
+            except Exception as e:
+                print(f"Failed to trash {p}: {e}")
+        self.status.flash(f"Moved {trashed} duplicate file(s) to Recycle Bin")
+        self.refresh()
 
     def open_ai_organizer(self) -> AIOrganizerDialog:
         d = AIOrganizerDialog(self, root=self.history.current)
-        d.executeRequested.connect(lambda rows: self.status.flash(f"HOOK: organize_requested → {len(rows)} renames/moves"))
+        d.executeRequested.connect(self._on_organize_requested)
         return self._open_dialog(d)
+
+    def _on_organize_requested(self, rows: list[dict]) -> None:
+        cur_dir = Path(self.history.current)
+        executed = 0
+        for r in rows:
+            orig = cur_dir / r["original"]
+            if orig.exists():
+                tag_name = r.get("tag", "General").lstrip("#").capitalize()
+                cat_dir = cur_dir / tag_name
+                cat_dir.mkdir(parents=True, exist_ok=True)
+                dest = cat_dir / r["proposed"]
+                try:
+                    shutil.move(str(orig), str(dest))
+                    executed += 1
+                except Exception as e:
+                    print(f"Failed to move {orig}: {e}")
+        self.status.flash(f"Organized {executed} file(s) into category folders")
+        self.refresh()
 
     def open_safe_locker(self, mode: str = "lock") -> SafeLockerDialog:
         files = self.explorer.selected_files()
         file = files[0] if len(files) == 1 and files[0]["kind"] != "folder" else None
         d = SafeLockerDialog(self, file=file, mode=mode)
-        d.vaultActionRequested.connect(lambda m, name, _pw, trash: (
-            self.backend.vault_action_requested.emit(m, name, "", trash),          # password is never forwarded from the demo
-            self.status.flash(f"HOOK: vault_action_requested → {m} {name}")))
+        d.vaultActionRequested.connect(self._on_vault_action)
         return self._open_dialog(d)
+
+    def _on_vault_action(self, mode: str, name: str, password: str, trash: bool) -> None:
+        from src.modules.crypto_vault import encrypt_file, decrypt_file
+        import send2trash
+        cur_dir = Path(self.history.current)
+        if mode == "lock":
+            src = cur_dir / name
+            dest = src.with_suffix(src.suffix + ".nxv")
+            try:
+                encrypt_file(src, dest, password)
+                if trash and src.exists():
+                    send2trash.send2trash(str(src))
+                self.status.flash(f"Locked & Encrypted: {dest.name}")
+                self.refresh()
+            except Exception as e:
+                self.status.flash(f"Vault encryption failed: {e}")
+        else:
+            src = cur_dir / name
+            if not src.name.endswith(".nxv"):
+                candidate = src.with_suffix(src.suffix + ".nxv")
+                if candidate.exists():
+                    src = candidate
+            try:
+                out = decrypt_file(src, cur_dir, password)
+                if trash and src.exists():
+                    send2trash.send2trash(str(src))
+                self.status.flash(f"Unlocked & Decrypted: {out.name}")
+                self.refresh()
+            except Exception as e:
+                self.status.flash(f"Vault decryption failed: {e}")
 
     def open_semantic_search(self, query: str = "") -> SemanticSearchDialog:
         d = SemanticSearchDialog(self, query=query if isinstance(query, str) else "")
         d.searchRequested.connect(self.backend.semantic_search_requested)
-        d.resultActivated.connect(lambda r: self.status.flash(f"HOOK: open_file_requested → {r['name']}"))
+        d.resultActivated.connect(lambda r: self.backend.open_file(r["path"]) if hasattr(self.backend, "open_file") and "path" in r else self.status.flash(f"Result: {r.get('name')}"))
         return self._open_dialog(d)
 
     def open_theme_store(self, tab: int = 0) -> ThemeStoreDialog:

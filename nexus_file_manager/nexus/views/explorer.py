@@ -73,6 +73,15 @@ class GridCardDelegate(QStyledItemDelegate):
 class ExplorerView(QWidget):
     selectionChanged = pyqtSignal(list)     # list[dict] – selected file records
     itemActivated = pyqtSignal(dict)        # HOOK: open file / navigate into folder
+    renameRequested = pyqtSignal(dict)      # file record
+    deleteRequested = pyqtSignal(list)      # list of file records
+    copyRequested = pyqtSignal(list, bool)  # (files, is_cut)
+    pasteRequested = pyqtSignal()
+    newFolderRequested = pyqtSignal()
+    newFileRequested = pyqtSignal()
+    openInTerminalRequested = pyqtSignal()
+    showInExplorerRequested = pyqtSignal(dict)
+    lockRequested = pyqtSignal(dict)
 
     def __init__(self, parent: QWidget | None = None):
         super().__init__(parent)
@@ -87,6 +96,7 @@ class ExplorerView(QWidget):
         self.table.setSortingEnabled(True)
         self.table.sortByColumn(0, Qt.SortOrder.AscendingOrder)
         self.table.horizontalHeader().setSortIndicator(0, Qt.SortOrder.AscendingOrder)
+        self.table.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
 
         self.grid = QListView()
         self.grid.setModel(self.proxy)
@@ -104,6 +114,7 @@ class ExplorerView(QWidget):
         self.grid.setVerticalScrollMode(QAbstractItemView.ScrollMode.ScrollPerPixel)
         self.grid.setItemDelegate(GridCardDelegate(self.grid))
         self.grid.setContentsMargins(SPACE_SM, SPACE_SM, SPACE_SM, SPACE_SM)
+        self.grid.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
 
         self.empty = QLabel("No files match your filter")
         self.empty.setProperty("role", "muted")
@@ -120,6 +131,8 @@ class ExplorerView(QWidget):
         self.grid.selectionModel().selectionChanged.connect(lambda *_: self._on_sel("grid"))
         self.table.doubleClicked.connect(self._on_double)
         self.grid.doubleClicked.connect(self._on_double)
+        self.table.customContextMenuRequested.connect(self._on_context_menu)
+        self.grid.customContextMenuRequested.connect(self._on_context_menu)
         self.proxy.rowsInserted.connect(self._update_page)
         self.proxy.rowsRemoved.connect(self._update_page)
         self.proxy.modelReset.connect(self._update_page)
@@ -191,3 +204,90 @@ class ExplorerView(QWidget):
             self.stack.setCurrentWidget(self.empty)
         else:
             self.stack.setCurrentWidget(self.table if self._mode == "table" else self.grid)
+
+    def _on_context_menu(self, pos) -> None:
+        from PyQt6.QtWidgets import QMenu
+        sender = self.sender()
+        viewport = sender.viewport() if sender else None
+        global_pos = viewport.mapToGlobal(pos) if viewport else self.mapToGlobal(pos)
+        sel = self.selected_files()
+
+        menu = QMenu(self)
+        if sel:
+            first = sel[0]
+            act_open = menu.addAction("Open")
+            act_open.triggered.connect(lambda: self.itemActivated.emit(first))
+
+            act_show = menu.addAction("Show in File Explorer")
+            act_show.triggered.connect(lambda: self.showInExplorerRequested.emit(first))
+
+            act_term = menu.addAction("Open in Terminal")
+            act_term.triggered.connect(self.openInTerminalRequested.emit)
+
+            menu.addSeparator()
+            act_cut = menu.addAction("Cut")
+            act_cut.setShortcut("Ctrl+X")
+            act_cut.triggered.connect(lambda: self.copyRequested.emit(sel, True))
+
+            act_copy = menu.addAction("Copy")
+            act_copy.setShortcut("Ctrl+C")
+            act_copy.triggered.connect(lambda: self.copyRequested.emit(sel, False))
+
+            act_rename = menu.addAction("Rename")
+            act_rename.setShortcut("F2")
+            act_rename.triggered.connect(lambda: self.renameRequested.emit(first))
+
+            act_del = menu.addAction("Delete to Recycle Bin")
+            act_del.setShortcut("Del")
+            act_del.triggered.connect(lambda: self.deleteRequested.emit(sel))
+
+            menu.addSeparator()
+            act_lock = menu.addAction("Encrypt in Safe Locker")
+            act_lock.triggered.connect(lambda: self.lockRequested.emit(first))
+        else:
+            act_folder = menu.addAction("New Folder")
+            act_folder.triggered.connect(self.newFolderRequested.emit)
+
+            act_file = menu.addAction("New File")
+            act_file.triggered.connect(self.newFileRequested.emit)
+
+            menu.addSeparator()
+            act_paste = menu.addAction("Paste")
+            act_paste.setShortcut("Ctrl+V")
+            act_paste.triggered.connect(self.pasteRequested.emit)
+
+            act_term = menu.addAction("Open in Terminal")
+            act_term.triggered.connect(self.openInTerminalRequested.emit)
+
+            act_refresh = menu.addAction("Refresh")
+            act_refresh.setShortcut("F5")
+            act_refresh.triggered.connect(lambda: self.itemActivated.emit({"kind": "refresh"}))
+
+        menu.exec(global_pos)
+
+    def keyPressEvent(self, e) -> None:
+        key = e.key()
+        mod = e.modifiers()
+        sel = self.selected_files()
+        if key == Qt.Key.Key_F2 and sel:
+            self.renameRequested.emit(sel[0])
+            e.accept()
+            return
+        elif key == Qt.Key.Key_Delete and sel:
+            self.deleteRequested.emit(sel)
+            e.accept()
+            return
+        elif mod == Qt.KeyboardModifier.ControlModifier:
+            if key == Qt.Key.Key_C and sel:
+                self.copyRequested.emit(sel, False)
+                e.accept()
+                return
+            elif key == Qt.Key.Key_X and sel:
+                self.copyRequested.emit(sel, True)
+                e.accept()
+                return
+            elif key == Qt.Key.Key_V:
+                self.pasteRequested.emit()
+                e.accept()
+                return
+        super().keyPressEvent(e)
