@@ -1,14 +1,15 @@
 """Build and package Nexus File Manager into a standalone desktop application (.exe)."""
 
-import sys
-import subprocess
+import argparse
+import os
 import shutil
+import subprocess
+import sys
 from pathlib import Path
 
 ROOT_DIR = Path(__file__).resolve().parent
 DIST_DIR = ROOT_DIR / "dist"
 BUILD_DIR = ROOT_DIR / "build"
-SPEC_FILE = ROOT_DIR / "NexusFileManager.spec"
 ICON_PATH = ROOT_DIR / "assets" / "icon.ico"
 
 
@@ -22,6 +23,9 @@ def build_app(onefile: bool = False):
         from create_icon import create_app_icon
         create_app_icon()
 
+    nexus_dir = ROOT_DIR / "nexus_file_manager"
+    icons_dir = nexus_dir / "nexus" / "assets" / "icons"
+
     # PyInstaller arguments
     cmd = [
         sys.executable,
@@ -32,19 +36,18 @@ def build_app(onefile: bool = False):
         "--noconfirm",
         f"--icon={ICON_PATH}",
         f"--add-data={ROOT_DIR / 'assets'};assets",
-        "--collect-all=qtawesome",
-        "--collect-all=pymupdf",
+        f"--add-data={icons_dir};nexus/assets/icons",
+        f"--add-data={nexus_dir / 'nexus'};nexus",
+        f"--add-data={ROOT_DIR / 'src'};src",
         "--collect-all=docx",
         "--collect-all=openpyxl",
-        "--hidden-import=qtawesome",
-        "--hidden-import=pymupdf",
-        "--hidden-import=PIL",
+        "--hidden-import=nexus",
+        "--hidden-import=psutil",
         "--hidden-import=cryptography",
         "--hidden-import=send2trash",
-        "--hidden-import=watchdog",
-        "--hidden-import=openpyxl",
         "--hidden-import=docx",
-        str(ROOT_DIR / "src" / "main.py"),
+        "--hidden-import=openpyxl",
+        str(ROOT_DIR / "run.py"),
     ]
 
     if onefile:
@@ -71,7 +74,6 @@ def build_app(onefile: bool = False):
 
 
 if __name__ == "__main__":
-    import argparse
     parser = argparse.ArgumentParser(description="Build Nexus File Manager")
     parser.add_argument("--onefile", action="store_true", help="Build single standalone .exe")
     args = parser.parse_args()
