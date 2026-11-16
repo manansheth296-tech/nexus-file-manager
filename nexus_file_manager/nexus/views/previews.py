@@ -84,19 +84,55 @@ class DocPreview(Card):
         super().__init__("card")
         self.setMaximumWidth(W)
         d = md.WORD_PREVIEW
+        path = file.get("path")
+        ext = file["name"].rsplit(".", 1)[-1].lower() if "." in file["name"] else ""
+        badge_label = "DOCX" if ext == "docx" else (ext.upper() if ext else "TEXT")
+        badge_color = ft.FILE_COLOR_WORD if ext == "docx" else "COLOR_ACCENT_PRIMARY"
+
+        real_title = None
+        real_paras = []
+        real_words = 0
+
+        if path and os.path.exists(path):
+            if ext == "docx":
+                try:
+                    import docx
+                    doc = docx.Document(path)
+                    paragraphs = [p.text.strip() for p in doc.paragraphs if p.text.strip()]
+                    if paragraphs:
+                        real_title = paragraphs[0]
+                        real_paras = paragraphs[1:5]
+                        real_words = sum(len(p.split()) for p in paragraphs)
+                except Exception:
+                    pass
+            elif ext in ("txt", "md", "py", "json", "js", "html", "css", "yaml", "yml", "ini", "log", "rs", "cpp", "c", "h"):
+                try:
+                    text = Path(path).read_text(encoding="utf-8", errors="replace")
+                    lines = [line.strip() for line in text.splitlines() if line.strip()]
+                    if lines:
+                        real_title = file["name"]
+                        real_paras = lines[:6]
+                        real_words = sum(len(l.split()) for l in lines)
+                except Exception:
+                    pass
+
+        title = real_title or d["title"]
+        paras = real_paras or d["paragraphs"]
+        words = real_words if real_words else d["words"]
+
         lay = QVBoxLayout(self)
         lay.setContentsMargins(SPACE_LG, SPACE_LG, SPACE_LG, SPACE_LG)
         lay.setSpacing(SPACE_MD)
         top = QHBoxLayout()
         top.setSpacing(SPACE_SM)
         top.addWidget(IconTile("file-text", ft.FILE_COLOR_WORD, 32))
-        top.addWidget(Badge("WORD", ft.FILE_COLOR_WORD))
-        top.addWidget(Badge(f"{d['words']:,} words", "COLOR_ACCENT_PRIMARY"))
+        top.addWidget(Badge(badge_label, badge_color))
+        top.addWidget(Badge(f"{words:,} words", "COLOR_ACCENT_PRIMARY"))
         top.addStretch(1)
         lay.addLayout(top)
         inner = W - 2 * SPACE_LG - 2          # card content width (minus border)
-        lay.addWidget(_wrapped(d["title"], "subheading", inner))
-        for para in d["paragraphs"]:
+        lay.addWidget(_wrapped(title, "subheading", inner))
+        for para in paras:
             lay.addWidget(_wrapped(para, "secondary", inner))
 
 
@@ -253,8 +289,9 @@ class PdfPreview(QWidget):
 class _ArchiveList(_Painted):
     ROW = 26
 
-    def __init__(self):
-        super().__init__(len(md.ARCHIVE_PREVIEW) * self.ROW + 2 * SPACE_SM)
+    def __init__(self, entries: list[tuple] | None = None):
+        self.entries = entries or md.ARCHIVE_PREVIEW
+        super().__init__(len(self.entries) * self.ROW + 2 * SPACE_SM)
 
     def paintEvent(self, event):
         t = theme_manager().tokens
@@ -262,7 +299,7 @@ class _ArchiveList(_Painted):
         _frame(p, QRectF(self.rect()), t)
         small = QFont(self.font())
         small.setPixelSize(FONT_SIZE_XS)
-        for i, (depth, name, size) in enumerate(md.ARCHIVE_PREVIEW):
+        for i, (depth, name, size) in enumerate(self.entries):
             y = SPACE_SM + i * self.ROW
             x = SPACE_MD + depth * 16
             kind = "folder" if size is None else (ft.file_type_for(name) or "file")
@@ -287,7 +324,23 @@ class _ArchiveList(_Painted):
 class ArchivePreview(QWidget):
     def __init__(self, file: dict):
         super().__init__()
-        entries = md.ARCHIVE_PREVIEW
+        entries = None
+        path = file.get("path")
+        if path and os.path.exists(path) and file["name"].lower().endswith(".zip"):
+            import zipfile
+            try:
+                with zipfile.ZipFile(path, "r") as z:
+                    entries = []
+                    for info in z.infolist()[:8]:
+                        fn = info.filename.rstrip("/")
+                        parts = fn.split("/")
+                        name = parts[-1]
+                        depth = min(2, max(0, len(parts) - 1))
+                        sz = None if info.is_dir() else info.file_size
+                        entries.append((depth, name, sz))
+            except Exception:
+                entries = None
+        entries = entries or md.ARCHIVE_PREVIEW
         files = sum(1 for _, _, s in entries if s is not None)
         folders = len(entries) - files
         lay = QVBoxLayout(self)
@@ -299,7 +352,7 @@ class ArchivePreview(QWidget):
         row.addWidget(Badge(f"{folders} folders", "COLOR_ACCENT_SECONDARY"))
         row.addStretch(1)
         lay.addLayout(row)
-        lay.addWidget(_ArchiveList())
+        lay.addWidget(_ArchiveList(entries))
         note = QLabel("Contents listed without extracting")
         note.setProperty("role", "muted")
         lay.addWidget(note)
@@ -413,7 +466,16 @@ class HexPreview(_Painted):
 
     def __init__(self, file: dict):
         super().__init__(self.LINES * 18 + 2 * SPACE_MD)
-        self._data = md.mock_hex_bytes(self.BYTES_PER_LINE * self.LINES)
+        target = self.BYTES_PER_LINE * self.LINES
+        path = file.get("path")
+        if path and os.path.exists(path):
+            try:
+                with open(path, "rb") as f:
+                    self._data = f.read(target)
+            except Exception:
+                self._data = md.mock_hex_bytes(target)
+        else:
+            self._data = md.mock_hex_bytes(target)
 
     def _mono(self) -> QFont:
         f = QFont("monospace")
