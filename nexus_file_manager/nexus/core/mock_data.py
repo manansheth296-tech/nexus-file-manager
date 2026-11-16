@@ -1,6 +1,8 @@
 """Placeholder data for UI development. Replace via core/backend.py hooks."""
 from __future__ import annotations
 
+from pathlib import Path
+
 from nexus.tokens.file_types import (FILE_COLOR_AUDIO, FILE_COLOR_IMAGE, FILE_COLOR_POWERPOINT,
                                      FILE_COLOR_VIDEO, FILE_COLOR_WORD)
 
@@ -50,7 +52,7 @@ MOCK_FILES: list[dict] = [
     _file("firmware.bin", 131_072, "Binary File", "2026-09-22 16:35", "binary"),
 ]
 
-START_PATH = "C:\\Users\\User\\Projects"
+START_PATH = str(Path.home())
 
 # (label, icon, badge colour (hex or token name), path)
 QUICK_ACCESS = [

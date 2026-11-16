@@ -110,12 +110,10 @@ class NexusSplashScreen(QSplashScreen):
 
     def finish_and_show(self, main_win: QWidget) -> None:
         self.set_progress(100, "Ready")
-        def _reveal():
-            main_win.show()
-            main_win.raise_()
-            main_win.activateWindow()
-            self.finish(main_win)
-        QTimer.singleShot(250, _reveal)
+        main_win.show()
+        main_win.raise_()
+        main_win.activateWindow()
+        self.finish(main_win)
 
     def paintEvent(self, event):
         t = theme_manager().tokens

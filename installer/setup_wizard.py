@@ -23,18 +23,18 @@ from PyQt6.QtWidgets import (QApplication, QCheckBox, QFileDialog, QFrame,
                              QProgressBar, QPushButton, QStackedWidget,
                              QVBoxLayout, QWidget, QStyle)
 
-# Colors matching Converge / Midnight aesthetic
-BG_BASE = "#0B0F19"
-BG_SURFACE = "#111827"
-BG_CARD = "#1E293B"
-BORDER = "#334155"
-BORDER_STRONG = "#475569"
-TEXT_PRIMARY = "#F8FAFC"
-TEXT_SECONDARY = "#94A3B8"
-TEXT_MUTED = "#64748B"
-ACCENT_PRIMARY = "#38BDF8"
-ACCENT_HOVER = "#0EA5E9"
-SUCCESS = "#10B981"
+# Colors matching Windows 11 Fluent aesthetic
+BG_BASE = "#1F1F1F"
+BG_SURFACE = "#282828"
+BG_CARD = "#323232"
+BORDER = "#3D3D3D"
+BORDER_STRONG = "#505050"
+TEXT_PRIMARY = "#FFFFFF"
+TEXT_SECONDARY = "#D1D5DB"
+TEXT_MUTED = "#8A8A8A"
+ACCENT_PRIMARY = "#60CDFF"
+ACCENT_HOVER = "#78D5FF"
+SUCCESS = "#6CCB5F"
 
 
 def get_default_install_dir() -> Path:

@@ -144,6 +144,31 @@ class ThemeTokens:
         return out
 
 
+# ── Windows Fluent: Windows 11 & Files App (files.community) Native Aesthetic ───
+WINDOWS_FLUENT = ThemeTokens(
+    name="Windows Fluent",
+    COLOR_BG_BASE="#1F1F1F",
+    COLOR_BG_SURFACE="#282828",
+    COLOR_BG_CARD="rgba(255, 255, 255, 0.04)",
+    COLOR_BORDER="rgba(255, 255, 255, 0.08)",
+    COLOR_BORDER_FOCUS="#60CDFF",
+    COLOR_ACCENT_PRIMARY="#60CDFF",
+    COLOR_ACCENT_SECONDARY="#9B7EF8",
+    COLOR_TEXT_PRIMARY="#FFFFFF",
+    COLOR_TEXT_SECONDARY="#D1D5DB",
+    COLOR_TEXT_MUTED="#8A8A8A",
+    COLOR_DANGER="#E81123",
+    COLOR_WARNING="#FCE100",
+    COLOR_SUCCESS="#6CCB5F",
+    COLOR_TEXT_ON_ACCENT="#111827",
+    COLOR_TEXT_ON_DANGER="#FFFFFF",
+    is_dark=True,
+    RADIUS_SM=4,
+    RADIUS_MD=8,
+    RADIUS_LG=8,
+    RADIUS_XL=10,
+)
+
 # ── Primary theme: Midnight Cyber [spec §3] – hex codes verbatim ───────────
 MIDNIGHT_CYBER = ThemeTokens(
     name="Midnight Cyber",
@@ -257,7 +282,7 @@ CONVERGE_DARK = ThemeTokens(
     RADIUS_XL=18,
 )
 
-INSTALLED_DEFAULT = [MIDNIGHT_CYBER, CONVERGE_DARK, DAYLIGHT_SLATE, NORD_FROST, FOREST_NIGHT]
+INSTALLED_DEFAULT = [WINDOWS_FLUENT, MIDNIGHT_CYBER, CONVERGE_DARK, DAYLIGHT_SLATE, NORD_FROST, FOREST_NIGHT]
 MARKETPLACE_THEMES = [CYBERPUNK_NEON, MACOS_GLASS, WINDOWS_95_RETRO]
 THEMES: dict[str, ThemeTokens] = {t.name: t for t in (*INSTALLED_DEFAULT, *MARKETPLACE_THEMES)}
 

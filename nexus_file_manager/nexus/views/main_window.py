@@ -34,11 +34,11 @@ from nexus.views.status_bar import NexusStatusBar
 from nexus.views.storage_doctor import StorageDoctorView
 from nexus.views.top_bar import TopBar
 
-MOCK_TRANSFER = True    # DEMO ONLY – animates the status-bar transfer; real data arrives via backend.transfer_progress
+MOCK_TRANSFER = False    # DEMO ONLY – disabled in production to eliminate mock data
 
 
 class MainWindow(QMainWindow):
-    def __init__(self, backend: BackendHooks | None = None, persist: bool = False):
+    def __init__(self, backend: BackendHooks | None = None, persist: bool = False, initial_path: str | None = None):
         super().__init__()
         self.setWindowTitle("Nexus File Manager")
         self.resize(WINDOW_DEFAULT_W, WINDOW_DEFAULT_H)
@@ -46,7 +46,7 @@ class MainWindow(QMainWindow):
         self._persist = persist
         self.backend = backend or BackendHooks(self)
         is_real = type(self.backend).__name__ == "RealBackend"
-        start = str(Path.cwd()) if is_real else START_PATH
+        start = initial_path or (str(Path.home()) if is_real else START_PATH)
         self.history = NavigationHistory(start)
         self._inspector_wanted = True
         self._dialog: QDialog | None = None

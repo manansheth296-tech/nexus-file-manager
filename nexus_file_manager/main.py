@@ -21,7 +21,7 @@ from PyQt6.QtWidgets import QApplication
 from nexus.core.real_backend import RealBackend
 from nexus.dev.gallery import ComponentGallery
 from nexus.styles.theme_manager import theme_manager
-from nexus.tokens import MIDNIGHT_CYBER, THEMES
+from nexus.tokens import MIDNIGHT_CYBER, THEMES, WINDOWS_FLUENT
 from nexus.tokens.color_utils import to_qcolor
 from nexus.views.main_window import MainWindow
 
@@ -102,6 +102,8 @@ def main(argv: list[str] | None = None) -> int:
 
     tm = theme_manager()
     aliases = {
+        "fluent": "Windows Fluent",
+        "windows": "Windows Fluent",
         "midnight": "Midnight Cyber",
         "converge": "Converge Dark",
         "daylight": "Daylight Slate (demo)",
@@ -114,9 +116,9 @@ def main(argv: list[str] | None = None) -> int:
     elif not (args.grab or args.gallery):
         tm.enable_persistence()
         if not tm.restore(app):
-            tm.apply(MIDNIGHT_CYBER, app)
+            tm.apply(WINDOWS_FLUENT, app)
     else:
-        tm.apply(MIDNIGHT_CYBER, app)
+        tm.apply(WINDOWS_FLUENT, app)
 
     if args.gallery:
         win = ComponentGallery()
@@ -126,7 +128,7 @@ def main(argv: list[str] | None = None) -> int:
         backend = None if args.mock else RealBackend()
         if splash:
             splash.set_progress(80, "Initializing workspace...")
-        win = MainWindow(backend=backend, persist=not (args.grab or forced))
+        win = MainWindow(backend=backend, persist=not (args.grab or forced), initial_path=args.path)
         if args.size:
             w, h = (int(v) for v in args.size.lower().split("x"))
             win.resize(w, h)

@@ -81,7 +81,14 @@ class RealBackend(BackendHooks):
                     continue
         except Exception as e:
             print(f"Error querying partitions: {e}", file=sys.stderr)
-        return drives or mock_data.DRIVES
+        if not drives:
+            try:
+                import psutil
+                usage = psutil.disk_usage("C:\\")
+                drives = [{"label": "Local Disk (C:)", "path": "C:\\", "used": usage.used, "total": usage.total}]
+            except Exception:
+                pass
+        return drives
 
     def get_quick_access(self) -> list[tuple[str, str, str | None, str]]:
         """Return real user locations (Home, Desktop, Documents, Downloads, etc.)."""
@@ -99,14 +106,13 @@ class RealBackend(BackendHooks):
         for label, icon, p in candidates:
             if p.exists() and p.is_dir():
                 qa.append((label, icon, None, str(p)))
-        return qa or mock_data.QUICK_ACCESS
+        return qa or [("Home", "home", None, str(home))]
 
     def list_directory(self, path: str) -> list[dict]:
-        """Read real directory contents or fallback to mock data if path doesn't exist."""
+        """Read real directory contents."""
         p = Path(path)
         if not p.exists() or not p.is_dir():
-            # If path doesn't exist on disk (e.g. mock test path), fallback cleanly to mock data
-            return mock_data.MOCK_FILES
+            return []
 
         items = []
         try:
@@ -149,7 +155,7 @@ class RealBackend(BackendHooks):
         """Scan real folder and build nested tree for Storage Doctor squarified treemap."""
         p = Path(root_path)
         if not p.exists() or not p.is_dir():
-            return mock_data.MOCK_STORAGE_TREE
+            return {"name": p.name or str(p), "size": 0, "children": []}
 
         def _scan(curr_p: Path, depth: int) -> dict:
             children = []

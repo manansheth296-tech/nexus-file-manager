@@ -96,7 +96,7 @@ class StorageDoctorView(QWidget):
         lay.addWidget(card, 1)
 
         self.treemap.pathChanged.connect(self._on_path)
-        self.load(MOCK_STORAGE_TREE)          # HOOK: replace with backend scan result
+        self.load(MOCK_STORAGE_TREE)
 
     def set_targets(self, targets: list[tuple[str, str]]) -> None:
         """Populate quick-target drive/folder buttons in the header."""

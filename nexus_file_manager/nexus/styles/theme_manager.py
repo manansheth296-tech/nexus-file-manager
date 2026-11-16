@@ -19,7 +19,7 @@ from PyQt6.QtWidgets import QApplication
 from nexus.styles.qss_generator import generate_qss
 from nexus.tokens import base
 from nexus.tokens.color_utils import to_qcolor
-from nexus.tokens.themes import INSTALLED_DEFAULT, MIDNIGHT_CYBER, THEMES, ThemeTokens
+from nexus.tokens.themes import INSTALLED_DEFAULT, MIDNIGHT_CYBER, THEMES, ThemeTokens, WINDOWS_FLUENT
 
 
 def _first_installed(stack: tuple[str, ...], fallback: str) -> str:
@@ -35,7 +35,7 @@ class ThemeManager(QObject):
 
     def __init__(self) -> None:
         super().__init__()
-        self._tokens: ThemeTokens = MIDNIGHT_CYBER
+        self._tokens: ThemeTokens = WINDOWS_FLUENT
         self._installed: list[ThemeTokens] = list(INSTALLED_DEFAULT)
         self._persist = False
         self._settings_file: str | None = None
@@ -136,6 +136,10 @@ class ThemeManager(QObject):
             if n in THEMES and not self.is_installed(n):
                 self._installed.append(THEMES[n])
         active = s.value("theme/active", "", type=str)
+        if not active:
+            return False
+        if active == "Midnight Cyber":
+            active = "Windows Fluent"
         if active not in THEMES:
             return False
         tokens = THEMES[active]
