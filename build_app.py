@@ -35,18 +35,33 @@ def build_app(onefile: bool = False):
         "--clean",
         "--noconfirm",
         f"--icon={ICON_PATH}",
+        f"--paths={ROOT_DIR}",
+        f"--paths={nexus_dir}",
         f"--add-data={ROOT_DIR / 'assets'};assets",
         f"--add-data={icons_dir};nexus/assets/icons",
         f"--add-data={nexus_dir / 'nexus'};nexus",
+        f"--add-data={nexus_dir};nexus_file_manager",
         f"--add-data={ROOT_DIR / 'src'};src",
+        "--collect-all=nexus",
+        "--collect-all=nexus_file_manager",
         "--collect-all=docx",
         "--collect-all=openpyxl",
         "--hidden-import=nexus",
+        "--hidden-import=nexus_file_manager",
+        "--hidden-import=nexus_file_manager.main",
+        "--hidden-import=nexus.components.splash_screen",
+        "--hidden-import=nexus.core",
+        "--hidden-import=nexus.styles",
+        "--hidden-import=nexus.tokens",
+        "--hidden-import=nexus.views",
+        "--hidden-import=nexus.dialogs",
         "--hidden-import=psutil",
         "--hidden-import=cryptography",
         "--hidden-import=send2trash",
         "--hidden-import=docx",
         "--hidden-import=openpyxl",
+        "--hidden-import=win32com",
+        "--hidden-import=win32com.client",
         str(ROOT_DIR / "run.py"),
     ]
 
@@ -71,6 +86,7 @@ def build_app(onefile: bool = False):
         print("=" * 60)
     else:
         print(f"\n[-] Build Failed with exit code {result.returncode}")
+        sys.exit(result.returncode)
 
 
 if __name__ == "__main__":

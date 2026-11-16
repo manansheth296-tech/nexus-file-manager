@@ -15,14 +15,14 @@ ICON_PATH = ROOT_DIR / "assets" / "icon.ico"
 INSTALLER_SCRIPT = ROOT_DIR / "installer" / "setup_wizard.py"
 
 
-def build_installer():
+def build_installer(rebuild_app: bool = True):
     print("=" * 70)
     print("[*] Building Nexus File Manager Windows Setup Installer (NexusSetup.exe)")
     print("=" * 70)
 
-    # 1. Verify that the application is built
-    if not (APP_DIST_DIR / "NexusFileManager.exe").exists():
-        print("[*] Application binary not found. Building Nexus File Manager first...")
+    # 1. Build fresh application binary if requested or if missing
+    if rebuild_app or not (APP_DIST_DIR / "NexusFileManager.exe").exists():
+        print("[*] Building fresh Nexus File Manager executable distribution...")
         from build_app import build_app
         build_app(onefile=False)
 
