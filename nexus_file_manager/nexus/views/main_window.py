@@ -367,6 +367,13 @@ class MainWindow(QMainWindow):
 
     def open_duplicate_hunter(self, animate: bool = True) -> DuplicateHunterDialog:
         d = DuplicateHunterDialog(self, root=self.history.current, animate=animate)
+        is_real = type(self.backend).__name__ == "RealBackend"
+        if is_real and Path(self.history.current).exists():
+            def _run_real_dup_scan():
+                if hasattr(self.backend, "find_duplicates"):
+                    real_groups = self.backend.find_duplicates(self.history.current)
+                    d.finish_scan(real_groups)
+            QTimer.singleShot(60, _run_real_dup_scan)
         d.scanRequested.connect(self.backend.duplicate_scan_requested)
         d.trashRequested.connect(self._on_trash_duplicates)
         return self._open_dialog(d)
@@ -384,7 +391,13 @@ class MainWindow(QMainWindow):
         self.refresh()
 
     def open_ai_organizer(self) -> AIOrganizerDialog:
-        d = AIOrganizerDialog(self, root=self.history.current)
+        is_real = type(self.backend).__name__ == "RealBackend"
+        rows = None
+        if is_real and hasattr(self.backend, "analyze_folder_organization") and Path(self.history.current).exists():
+            real_rows = self.backend.analyze_folder_organization(self.history.current)
+            if real_rows:
+                rows = real_rows
+        d = AIOrganizerDialog(self, root=self.history.current, rows=rows)
         d.executeRequested.connect(self._on_organize_requested)
         return self._open_dialog(d)
 
@@ -444,7 +457,11 @@ class MainWindow(QMainWindow):
                 self.status.flash(f"Vault decryption failed: {e}")
 
     def open_semantic_search(self, query: str = "") -> SemanticSearchDialog:
-        d = SemanticSearchDialog(self, query=query if isinstance(query, str) else "")
+        is_real = type(self.backend).__name__ == "RealBackend"
+        search_fn = None
+        if is_real and hasattr(self.backend, "search_content") and Path(self.history.current).exists():
+            search_fn = lambda q: self.backend.search_content(q, self.history.current)
+        d = SemanticSearchDialog(self, query=query if isinstance(query, str) else "", search_fn=search_fn)
         d.searchRequested.connect(self.backend.semantic_search_requested)
         d.resultActivated.connect(lambda r: self.backend.open_file(r["path"]) if hasattr(self.backend, "open_file") and "path" in r else self.status.flash(f"Result: {r.get('name')}"))
         return self._open_dialog(d)

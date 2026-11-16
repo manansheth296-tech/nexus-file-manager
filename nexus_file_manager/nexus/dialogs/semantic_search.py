@@ -106,9 +106,10 @@ class SemanticSearchDialog(NexusDialog):
     searchRequested = pyqtSignal(str)      # HOOK: forward to the index backend
     resultActivated = pyqtSignal(dict)     # HOOK: open / reveal the file
 
-    def __init__(self, parent: QWidget | None = None, query: str = ""):
+    def __init__(self, parent: QWidget | None = None, query: str = "", search_fn=None):
         super().__init__("Semantic Search", "Search by meaning and file contents, not just filenames",
                          "search", "COLOR_ACCENT_PRIMARY", DIALOG_SEMANTIC_SEARCH, parent)
+        self._search_fn = search_fn
         col = QVBoxLayout(self.body)
         col.setContentsMargins(SPACE_XL - 4, SPACE_LG - 2, SPACE_XL - 4, 0)
         col.setSpacing(SPACE_SM)
@@ -181,7 +182,10 @@ class SemanticSearchDialog(NexusDialog):
             self.count.setText("")
             return
         self.searchRequested.emit(query)
-        results = mock_search.search(query)                       # HOOK
+        if self._search_fn is not None:
+            results = self._search_fn(query)
+        else:
+            results = mock_search.search(query)                       # HOOK
         for r in results:
             item = QStandardItem()
             item.setData(r, ROLE)

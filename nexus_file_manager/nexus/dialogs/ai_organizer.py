@@ -151,7 +151,7 @@ class _OrganizerTable(NexusTableView):
 class AIOrganizerDialog(NexusDialog):
     executeRequested = pyqtSignal(list)    # HOOK: apply these renames/moves
 
-    def __init__(self, parent: QWidget | None = None, root: str = "C:\\Users\\User\\Downloads"):
+    def __init__(self, parent: QWidget | None = None, root: str = "C:\\Users\\User\\Downloads", rows: list | None = None):
         super().__init__("AI Smart Organizer", "Dry run — review the proposals; nothing changes until you execute",
                          "wand", "COLOR_ACCENT_SECONDARY", DIALOG_AI_ORGANIZER, parent)
         col = QVBoxLayout(self.body)
@@ -160,7 +160,8 @@ class AIOrganizerDialog(NexusDialog):
 
         top = QHBoxLayout()
         top.setSpacing(SPACE_SM)
-        self.model = OrganizerModel(MOCK_ORGANIZER)
+        items = rows if rows is not None else MOCK_ORGANIZER
+        self.model = OrganizerModel(items)
         top.addWidget(Badge(f"{len(self.model.rows)} files analysed", "COLOR_ACCENT_PRIMARY"))
         top.addWidget(Badge(f"{sum(r['confidence'] >= HIGH for r in self.model.rows)} high confidence", "COLOR_SUCCESS"))
         top.addWidget(Badge(f"{sum(r['confidence'] < GOOD for r in self.model.rows)} need a look", "COLOR_WARNING"))

@@ -312,16 +312,22 @@ class DuplicateHunterDialog(NexusDialog):
         self.stages.set_state(self._stage, self._step)
         self.metric_sub.setText(self._DETAILS[self._stage])
 
-    def finish_scan(self) -> None:
+    def finish_scan(self, groups: list[dict] | None = None) -> None:
         self._timer.stop()
         self.stages.set_state(3)
-        groups = MOCK_DUPLICATES
+        if groups is None:
+            groups = MOCK_DUPLICATES
         wasted = sum(g["size"] * (len(g["copies"]) - 1) for g in groups)
         self.list.set_groups(groups)
-        self.metric_main.setText(f"{len(groups)} duplicate groups")
-        self.metric_sub.setText(f"{format_size(wasted)} reclaimable")
+        if groups:
+            self.metric_main.setText(f"{len(groups)} duplicate groups")
+            self.metric_sub.setText(f"{format_size(wasted)} reclaimable")
+            self._set_toolbar_enabled(True)
+        else:
+            self.metric_main.setText("0 duplicate groups")
+            self.metric_sub.setText("No duplicates found · folder is clean")
+            self._set_toolbar_enabled(False)
         self.set_subtitle(f"Scan complete · {self.root}")
-        self._set_toolbar_enabled(True)
         self._update_actions()
 
     def _set_toolbar_enabled(self, on: bool) -> None:

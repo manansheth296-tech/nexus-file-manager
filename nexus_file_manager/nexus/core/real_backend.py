@@ -209,3 +209,221 @@ class RealBackend(BackendHooks):
                 subprocess.Popen(["xdg-open", str(p)])
         except Exception as e:
             print(f"Failed to open {file_path}: {e}", file=sys.stderr)
+
+    def find_duplicates(self, root_path: str, max_files: int = 4000) -> list[dict]:
+        """Detect duplicate files using 3-tier algorithm (size -> 4KB MD5 -> full SHA256)."""
+        p = Path(root_path)
+        if not p.exists() or not p.is_dir():
+            return []
+
+        from collections import defaultdict
+        from src.modules.duplicate_finder import get_partial_hash, get_full_hash
+
+        # Tier 1: Group by size
+        size_map: dict[int, list[Path]] = defaultdict(list)
+        count = 0
+        try:
+            for root, _, files in os.walk(p):
+                for fn in files:
+                    fp = Path(root) / fn
+                    try:
+                        sz = fp.stat().st_size
+                        if sz > 0:
+                            size_map[sz].append(fp)
+                            count += 1
+                            if count >= max_files:
+                                break
+                    except (PermissionError, OSError):
+                        pass
+                if count >= max_files:
+                    break
+        except Exception:
+            return []
+
+        candidates = [paths for paths in size_map.values() if len(paths) > 1]
+        if not candidates:
+            return []
+
+        # Tier 2: 4KB Header hash
+        partial_map: dict[tuple[int, str], list[Path]] = defaultdict(list)
+        for group in candidates:
+            for fp in group:
+                phash = get_partial_hash(fp)
+                if phash:
+                    try:
+                        partial_map[(fp.stat().st_size, phash)].append(fp)
+                    except OSError:
+                        pass
+
+        full_candidates = [paths for paths in partial_map.values() if len(paths) > 1]
+        if not full_candidates:
+            return []
+
+        # Tier 3: Full SHA-256
+        dup_groups: list[dict] = []
+        for group in full_candidates:
+            sha_map: dict[str, list[Path]] = defaultdict(list)
+            for fp in group:
+                fhash = get_full_hash(fp)
+                if fhash:
+                    sha_map[fhash].append(fp)
+
+            for sha, matches in sha_map.items():
+                if len(matches) > 1:
+                    size = matches[0].stat().st_size
+                    copies = []
+                    for m in matches:
+                        try:
+                            mtime = datetime.datetime.fromtimestamp(m.stat().st_mtime).strftime("%Y-%m-%d %H:%M")
+                        except OSError:
+                            mtime = "Unknown"
+                        copies.append({
+                            "path": str(m),
+                            "modified": mtime
+                        })
+                    dup_groups.append({
+                        "name": matches[0].name,
+                        "size": size,
+                        "copies": copies
+                    })
+
+        return dup_groups
+
+    def search_content(self, query: str, root_path: str, max_results: int = 50) -> list[dict]:
+        """Search text and document files in root_path by query terms."""
+        p = Path(root_path)
+        if not p.exists() or not p.is_dir():
+            return []
+
+        from src.modules.semantic_search import tokenize
+        query_tokens = tokenize(query)
+        if not query_tokens:
+            return []
+
+        searchable_exts = {
+            ".txt", ".md", ".py", ".js", ".ts", ".html", ".css", ".json",
+            ".pdf", ".csv", ".yaml", ".yml", ".c", ".cpp", ".java", ".rs", ".docx"
+        }
+
+        results: list[dict] = []
+        count = 0
+        try:
+            for root, _, files in os.walk(p):
+                rel = Path(root).relative_to(p).parts
+                if any(part in (".git", "node_modules", ".venv", "__pycache__", "build", "dist") for part in rel):
+                    continue
+                if len(rel) > 4:
+                    continue
+
+                for fn in files:
+                    fp = Path(root) / fn
+                    ext = fp.suffix.lower()
+                    if ext not in searchable_exts:
+                        continue
+
+                    text = ""
+                    try:
+                        if ext == ".docx":
+                            import docx
+                            doc = docx.Document(fp)
+                            text = " ".join(p.text for p in doc.paragraphs[:20])
+                        elif ext == ".pdf":
+                            try:
+                                import pymupdf
+                                doc = pymupdf.open(fp)
+                                text = " ".join(page.get_text() for page in doc[:5])
+                                doc.close()
+                            except Exception:
+                                pass
+                        else:
+                            with open(fp, "r", encoding="utf-8", errors="ignore") as f:
+                                text = f.read(100_000)
+                    except Exception:
+                        continue
+
+                    if not text:
+                        continue
+
+                    text_lower = text.lower()
+                    name_lower = fp.name.lower()
+                    matched_terms = [t for t in query_tokens if t in text_lower or t in name_lower]
+                    if not matched_terms:
+                        continue
+
+                    term_ratio = len(matched_terms) / len(query_tokens)
+                    relevance = int(min(98, 50 + term_ratio * 40 + (10 if any(t in name_lower for t in query_tokens) else 0)))
+
+                    first_pos = min((text_lower.find(t) for t in matched_terms if t in text_lower), default=-1)
+                    if first_pos != -1:
+                        start = max(0, first_pos - 60)
+                        end = min(len(text), first_pos + 120)
+                        raw_snip = text[start:end].replace("\r", " ").replace("\n", " ").strip()
+                        prefix = "..." if start > 0 else ""
+                        suffix = "..." if end < len(text) else ""
+                        snippet = f"{prefix}{raw_snip}{suffix}"
+                    else:
+                        snippet = text[:150].replace("\r", " ").replace("\n", " ").strip() + "..."
+
+                    results.append({
+                        "name": fp.name,
+                        "path": str(fp),
+                        "kind": file_type_for(fp.name) or "code",
+                        "relevance": relevance,
+                        "snippet": snippet,
+                        "terms": matched_terms,
+                    })
+                    count += 1
+                    if count >= max_results:
+                        break
+                if count >= max_results:
+                    break
+        except Exception as e:
+            print(f"Error searching content: {e}", file=sys.stderr)
+
+        results.sort(key=lambda r: r["relevance"], reverse=True)
+        return results
+
+    def analyze_folder_organization(self, root_path: str) -> list[tuple[str, str, str, float, str]]:
+        """Analyze files in folder and suggest clean names and category tags."""
+        p = Path(root_path)
+        if not p.exists() or not p.is_dir():
+            return []
+
+        import re
+        proposals = []
+        try:
+            for entry in os.scandir(p):
+                if not entry.is_file():
+                    continue
+                fn = entry.name
+                ext = Path(fn).suffix.lower()
+                stem = Path(fn).stem
+                kind = file_type_for(fn) or "binary"
+
+                tag = "#code" if kind == "code" else "#media" if kind in ("image", "video", "audio") else "#academic"
+                conf = 0.85
+                lower = stem.lower()
+                if any(w in lower for w in ("invoice", "receipt", "bill", "tax", "statement", "salary", "gst")):
+                    tag = "#finance"
+                    conf = 0.95
+                elif any(w in lower for w in ("paper", "thesis", "study", "lecture", "exam", "syllabus", "notes")):
+                    tag = "#academic"
+                    conf = 0.92
+                elif kind in ("image", "video", "audio"):
+                    tag = "#media"
+                    conf = 0.94
+                elif kind == "code":
+                    tag = "#code"
+                    conf = 0.90
+
+                clean_name = re.sub(r"[_\-\.]+", " ", stem).strip()
+                clean_name = " ".join(word.capitalize() for word in clean_name.split())
+                proposed = f"{clean_name}{ext}" if clean_name else fn
+
+                proposals.append((fn, proposed, tag, conf, kind))
+                if len(proposals) >= 40:
+                    break
+        except Exception:
+            return []
+
+        return proposals
