@@ -141,17 +141,60 @@ class SheetPreview(_Painted):
     ROW_H, HEAD_H, ROWNUM_W = 24, 22, 24
 
     def __init__(self, file: dict):
-        super().__init__(self.HEAD_H + self.ROW_H * len(md.SHEET_PREVIEW["rows"]) + 2 * SPACE_SM)
+        d = md.SHEET_PREVIEW
+        path = file.get("path")
+        self._columns = d["columns"]
+        self._rows = d["rows"]
+
+        if path and os.path.exists(path):
+            ext = file["name"].rsplit(".", 1)[-1].lower() if "." in file["name"] else ""
+            if ext == "csv":
+                try:
+                    import csv
+                    with open(path, "r", encoding="utf-8", errors="ignore") as f:
+                        reader = csv.reader(f)
+                        raw = [row for i, row in enumerate(reader) if i < 7 and any(row)]
+                    if len(raw) >= 2:
+                        cols = [c.strip() for c in raw[0][:4]]
+                        rows = [[c.strip() for c in r[:len(cols)]] for r in raw[1:7]]
+                        if cols and rows:
+                            self._columns = cols
+                            self._rows = rows
+                except Exception:
+                    pass
+            elif ext in ("xlsx", "xls"):
+                try:
+                    import openpyxl
+                    wb = openpyxl.load_workbook(path, read_only=True, data_only=True)
+                    ws = wb.active
+                    raw = []
+                    for i, r in enumerate(ws.iter_rows(values_only=True)):
+                        if i >= 7:
+                            break
+                        if any(r):
+                            raw.append([str(c or "") for c in r[:4]])
+                    wb.close()
+                    if len(raw) >= 2:
+                        cols = [c[:12] for c in raw[0]]
+                        rows = [[c[:12] for c in r[:len(cols)]] for r in raw[1:7]]
+                        if cols and rows:
+                            self._columns = cols
+                            self._rows = rows
+                except Exception:
+                    pass
+
+        super().__init__(self.HEAD_H + self.ROW_H * len(self._rows) + 2 * SPACE_SM)
 
     def paintEvent(self, event):
         t = theme_manager().tokens
         p = QPainter(self)
         _frame(p, QRectF(self.rect()), t)
-        d = md.SHEET_PREVIEW
+        cols = self._columns
+        rows = self._rows
         x0, y0 = SPACE_SM, SPACE_SM
-        ncols = len(d["columns"])
+        ncols = max(1, len(cols))
         first = 56                                         # label column is wider than the numeric ones
-        cw = (W - 2 * SPACE_SM - self.ROWNUM_W - first) / (ncols - 1)
+        cw = (W - 2 * SPACE_SM - self.ROWNUM_W - first) / max(1, ncols - 1)
         colx = lambda c: x0 + self.ROWNUM_W + (0 if c == 0 else first + (c - 1) * cw)   # noqa: E731
         colw = lambda c: first if c == 0 else cw                                          # noqa: E731
         small = QFont(self.font())
@@ -162,27 +205,29 @@ class SheetPreview(_Painted):
         p.setBrush(to_qcolor(t.COLOR_BG_SURFACE))
         p.drawRect(QRectF(x0, y0, W - 2 * SPACE_SM, self.HEAD_H))
         p.setPen(to_qcolor(t.COLOR_TEXT_MUTED))
-        for c, name in enumerate(d["columns"]):
+        for c, name in enumerate(cols):
             p.drawText(QRectF(colx(c), y0, colw(c), self.HEAD_H), Qt.AlignmentFlag.AlignCenter, name)
         # rows (alternating cells, first row = header row of the data)
-        for r, row in enumerate(d["rows"]):
+        for r, row in enumerate(rows):
             y = y0 + self.HEAD_H + r * self.ROW_H
             if r % 2:
                 p.fillRect(QRectF(x0, y, W - 2 * SPACE_SM, self.ROW_H), to_qcolor(t.COLOR_ROW_ALT))
             p.setPen(to_qcolor(t.COLOR_TEXT_MUTED))
             p.drawText(QRectF(x0, y, self.ROWNUM_W, self.ROW_H), Qt.AlignmentFlag.AlignCenter, str(r + 1))
             for c, cell in enumerate(row):
-                strong = r == 0 or r == len(d["rows"]) - 2
+                if c >= ncols:
+                    break
+                strong = r == 0 or r == len(rows) - 2
                 f = QFont(small)
                 f.setWeight(QFont.Weight.DemiBold if strong else QFont.Weight.Normal)
                 p.setFont(f)
                 p.setPen(to_qcolor(t.COLOR_TEXT_PRIMARY if (strong or c == 0) else t.COLOR_TEXT_SECONDARY))
                 align = Qt.AlignmentFlag.AlignLeft if c == 0 else Qt.AlignmentFlag.AlignRight
                 p.drawText(QRectF(colx(c) + SPACE_SM, y, colw(c) - 2 * SPACE_SM, self.ROW_H),
-                           align | Qt.AlignmentFlag.AlignVCenter, cell)
+                           align | Qt.AlignmentFlag.AlignVCenter, str(cell))
         # hairlines
         p.setPen(to_qcolor(t.COLOR_BORDER))
-        total_h = self.HEAD_H + self.ROW_H * len(d["rows"])
+        total_h = self.HEAD_H + self.ROW_H * len(rows)
         for c in range(ncols + 1):
             xx = colx(c) if c < ncols else x0 + W - 2 * SPACE_SM
             p.drawLine(QPointF(xx, y0), QPointF(xx, y0 + total_h))
@@ -192,8 +237,9 @@ class SheetPreview(_Painted):
 
 # ── 3. Image ───────────────────────────────────────────────────────────────
 class _ImageCanvas(_Painted):
-    def __init__(self):
+    def __init__(self, pixmap: QPixmap | None = None):
         super().__init__(168)
+        self.pixmap = pixmap
 
     def paintEvent(self, event):
         t = theme_manager().tokens
@@ -203,17 +249,30 @@ class _ImageCanvas(_Painted):
         clip = QPainterPath()
         clip.addRoundedRect(r, t.RADIUS_LG, t.RADIUS_LG)
         p.setClipPath(clip)
-        g = QLinearGradient(r.topLeft(), r.bottomRight())
-        g.setColorAt(0, to_qcolor(with_alpha(t.COLOR_ACCENT_SECONDARY, 0.55)))
-        g.setColorAt(1, to_qcolor(with_alpha(t.COLOR_ACCENT_PRIMARY, 0.55)))
-        p.fillRect(r, g)
-        p.setPen(Qt.PenStyle.NoPen)
-        p.setBrush(to_qcolor(with_alpha(t.COLOR_TEXT_PRIMARY, 0.55)))
-        p.drawEllipse(QPointF(r.right() - 56, r.top() + 44), 18, 18)                 # sun
-        for pts, a in (([(0, 168), (70, 84), (130, 168)], 0.30), ([(60, 168), (150, 70), (250, 168)], 0.45),
-                       ([(170, 168), (230, 104), (W, 150), (W, 168)], 0.60)):         # hills
-            p.setBrush(to_qcolor(with_alpha(t.COLOR_BG_BASE, a)))
-            p.drawPolygon(QPolygonF([QPointF(x, y) for x, y in pts]))
+
+        if self.pixmap and not self.pixmap.isNull():
+            p.fillRect(r, to_qcolor(t.COLOR_BG_SURFACE))
+            scaled = self.pixmap.scaled(
+                int(r.width()), int(r.height()),
+                Qt.AspectRatioMode.KeepAspectRatio,
+                Qt.TransformationMode.SmoothTransformation
+            )
+            px = r.x() + (r.width() - scaled.width()) / 2
+            py = r.y() + (r.height() - scaled.height()) / 2
+            p.drawPixmap(int(px), int(py), scaled)
+        else:
+            g = QLinearGradient(r.topLeft(), r.bottomRight())
+            g.setColorAt(0, to_qcolor(with_alpha(t.COLOR_ACCENT_SECONDARY, 0.55)))
+            g.setColorAt(1, to_qcolor(with_alpha(t.COLOR_ACCENT_PRIMARY, 0.55)))
+            p.fillRect(r, g)
+            p.setPen(Qt.PenStyle.NoPen)
+            p.setBrush(to_qcolor(with_alpha(t.COLOR_TEXT_PRIMARY, 0.55)))
+            p.drawEllipse(QPointF(r.right() - 56, r.top() + 44), 18, 18)                 # sun
+            for pts, a in (([(0, 168), (70, 84), (130, 168)], 0.30), ([(60, 168), (150, 70), (250, 168)], 0.45),
+                           ([(170, 168), (230, 104), (W, 150), (W, 168)], 0.60)):         # hills
+                p.setBrush(to_qcolor(with_alpha(t.COLOR_BG_BASE, a)))
+                p.drawPolygon(QPolygonF([QPointF(x, y) for x, y in pts]))
+
         p.setClipping(False)
         p.setPen(to_qcolor(t.COLOR_BORDER_STRONG))
         p.setBrush(Qt.BrushStyle.NoBrush)
@@ -225,15 +284,35 @@ class ImagePreview(QWidget):
     def __init__(self, file: dict):
         super().__init__()
         d = md.IMAGE_PREVIEW
+        path = file.get("path")
+        pixmap = None
+        width = d["width"]
+        height = d["height"]
+
+        if path and os.path.exists(path):
+            try:
+                from PyQt6.QtGui import QImageReader
+                reader = QImageReader(path)
+                sz = reader.size()
+                if sz.isValid():
+                    width = sz.width()
+                    height = sz.height()
+                    pm = QPixmap(path)
+                    if not pm.isNull():
+                        pixmap = pm
+            except Exception:
+                pass
+
         lay = QVBoxLayout(self)
         lay.setContentsMargins(0, 0, 0, 0)
         lay.setSpacing(SPACE_MD)
-        lay.addWidget(_ImageCanvas())
+        lay.addWidget(_ImageCanvas(pixmap))
         row = QHBoxLayout()
         row.setSpacing(SPACE_SM)
-        row.addWidget(Badge(f"{d['width']} × {d['height']} px", "COLOR_ACCENT_PRIMARY"))
-        row.addWidget(Badge(f"{d['width'] * d['height'] / 1e6:.1f} MP", "COLOR_SUCCESS"))
-        ext = file["name"].rsplit(".", 1)[-1].upper()
+        row.addWidget(Badge(f"{width} × {height} px", "COLOR_ACCENT_PRIMARY"))
+        mp = (width * height) / 1e6
+        row.addWidget(Badge(f"{mp:.1f} MP", "COLOR_SUCCESS"))
+        ext = file["name"].rsplit(".", 1)[-1].upper() if "." in file["name"] else "IMG"
         row.addWidget(Badge(ext, ft.FILE_COLOR_IMAGE))
         row.addStretch(1)
         lay.addLayout(row)
@@ -243,8 +322,9 @@ class ImagePreview(QWidget):
 class _PdfPage(_Painted):
     PAGE_W, PAGE_H = 148, 200
 
-    def __init__(self):
+    def __init__(self, pixmap: QPixmap | None = None):
         super().__init__(224)
+        self.pixmap = pixmap
 
     def paintEvent(self, event):
         t = theme_manager().tokens
@@ -256,30 +336,60 @@ class _PdfPage(_Painted):
         p.drawRoundedRect(page.translated(0, 3), 3, 3)
         p.setBrush(to_qcolor(t.COLOR_PAPER))
         p.drawRoundedRect(page, 3, 3)
-        ink = to_qcolor(t.COLOR_PAPER_INK)
-        p.setBrush(to_qcolor(ft.FILE_COLOR_PDF))                          # title bar in PDF accent
-        p.drawRoundedRect(QRectF(page.x() + 14, page.y() + 16, 70, 8), 2, 2)
-        p.setBrush(ink)
-        y = page.y() + 38
-        for i, frac in enumerate((1, .94, 1, .88, .97, .6, 0, 1, .92, 1, .85, .96, .5)):
-            if frac == 0:
-                y += 8
-                continue
-            p.drawRoundedRect(QRectF(page.x() + 14, y, (self.PAGE_W - 28) * frac, 4), 2, 2)
-            y += 10
+
+        if self.pixmap and not self.pixmap.isNull():
+            scaled = self.pixmap.scaled(
+                int(self.PAGE_W - 8), int(self.PAGE_H - 8),
+                Qt.AspectRatioMode.KeepAspectRatio,
+                Qt.TransformationMode.SmoothTransformation
+            )
+            px = page.x() + (self.PAGE_W - scaled.width()) / 2
+            py = page.y() + (self.PAGE_H - scaled.height()) / 2
+            p.drawPixmap(int(px), int(py), scaled)
+        else:
+            ink = to_qcolor(t.COLOR_PAPER_INK)
+            p.setBrush(to_qcolor(ft.FILE_COLOR_PDF))                          # title bar in PDF accent
+            p.drawRoundedRect(QRectF(page.x() + 14, page.y() + 16, 70, 8), 2, 2)
+            p.setBrush(ink)
+            y = page.y() + 38
+            for i, frac in enumerate((1, .94, 1, .88, .97, .6, 0, 1, .92, 1, .85, .96, .5)):
+                if frac == 0:
+                    y += 8
+                    continue
+                p.drawRoundedRect(QRectF(page.x() + 14, y, (self.PAGE_W - 28) * frac, 4), 2, 2)
+                y += 10
         p.end()
 
 
 class PdfPreview(QWidget):
     def __init__(self, file: dict):
         super().__init__()
+        path = file.get("path")
+        pixmap = None
+        pages = md.PDF_PREVIEW["pages"]
+
+        if path and os.path.exists(path):
+            try:
+                import pymupdf
+                from PyQt6.QtGui import QImage
+                doc = pymupdf.open(path)
+                pages = len(doc)
+                if pages > 0:
+                    page = doc[0]
+                    pix = page.get_pixmap(dpi=120)
+                    qimg = QImage(pix.samples, pix.width, pix.height, pix.stride, QImage.Format.Format_RGB888)
+                    pixmap = QPixmap.fromImage(qimg)
+                doc.close()
+            except Exception:
+                pass
+
         lay = QVBoxLayout(self)
         lay.setContentsMargins(0, 0, 0, 0)
         lay.setSpacing(SPACE_MD)
-        lay.addWidget(_PdfPage())
+        lay.addWidget(_PdfPage(pixmap))
         row = QHBoxLayout()
         row.setSpacing(SPACE_SM)
-        row.addWidget(Badge(f"{md.PDF_PREVIEW['pages']} pages", ft.FILE_COLOR_PDF))
+        row.addWidget(Badge(f"{pages} page{'s' if pages != 1 else ''}", ft.FILE_COLOR_PDF))
         row.addWidget(Badge("Page 1", "COLOR_ACCENT_PRIMARY"))
         row.addStretch(1)
         lay.addLayout(row)

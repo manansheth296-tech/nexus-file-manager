@@ -218,6 +218,11 @@ class ExplorerView(QWidget):
             act_open = menu.addAction("Open")
             act_open.triggered.connect(lambda: self.itemActivated.emit(first))
 
+            ext = (first.get("name") or "").rsplit(".", 1)[-1].lower() if "." in (first.get("name") or "") else ""
+            if ext in ("py", "bat", "cmd", "ps1", "exe"):
+                act_run = menu.addAction("Run Script / Executable")
+                act_run.triggered.connect(lambda: self.itemActivated.emit(first))
+
             act_show = menu.addAction("Show in File Explorer")
             act_show.triggered.connect(lambda: self.showInExplorerRequested.emit(first))
 
@@ -271,6 +276,10 @@ class ExplorerView(QWidget):
         sel = self.selected_files()
         if key == Qt.Key.Key_F2 and sel:
             self.renameRequested.emit(sel[0])
+            e.accept()
+            return
+        elif key in (Qt.Key.Key_Return, Qt.Key.Key_Enter) and sel:
+            self.itemActivated.emit(sel[0])
             e.accept()
             return
         elif key == Qt.Key.Key_Delete and sel:

@@ -58,14 +58,16 @@ class SafeLockerDialog(NexusDialog):
         tl = QHBoxLayout(target)
         tl.setContentsMargins(SPACE_MD, 6, SPACE_SM, 6)
         tl.setSpacing(SPACE_MD)
-        tl.addWidget(IconTile(kind_icon(self.file["kind"]), kind_color(self.file["kind"]), 28))
+        self.target_icon = IconTile(kind_icon(self.file["kind"]), kind_color(self.file["kind"]), 28)
+        tl.addWidget(self.target_icon)
         self.target_name = ElidedLabel(self.file["name"])
         tl.addWidget(self.target_name, 1)
-        size = QLabel(format_size(self.file["size"]))
-        size.setProperty("role", "muted")
-        tl.addWidget(size)
+        self.target_size = QLabel(format_size(self.file["size"]))
+        self.target_size.setProperty("role", "muted")
+        tl.addWidget(self.target_size)
         self.btn_change = Button("Change…", variant="ghost")
         self.btn_change.setFixedHeight(28)
+        self.btn_change.clicked.connect(self._choose_file)
         tl.addWidget(self.btn_change)
         col.addWidget(target)
         col.addSpacing(SPACE_MD)
@@ -132,6 +134,26 @@ class SafeLockerDialog(NexusDialog):
         else:
             self.confirm.set_error(False)
             self.btn_go.setEnabled(bool(pw))
+
+    def _choose_file(self) -> None:
+        from pathlib import Path
+        from PyQt6.QtWidgets import QFileDialog
+        filter_str = "All Files (*.*)" if self.mode == "lock" else "Encrypted Vaults (*.nxv);;All Files (*.*)"
+        path, _ = QFileDialog.getOpenFileName(self, "Select File for Safe Locker", "", filter_str)
+        if path:
+            p = Path(path)
+            from nexus.tokens.file_types import file_type_for
+            self.file = {
+                "name": p.name,
+                "path": str(p),
+                "size": p.stat().st_size if p.exists() else 0,
+                "kind": file_type_for(p.name) or "binary"
+            }
+            lock = self.mode == "lock"
+            self.target_name.setText(self.file["name"] if lock else self.file["name"] + ".nxv")
+            self.target_icon.set_icon(kind_icon(self.file["kind"]), kind_color(self.file["kind"]))
+            self.target_size.setText(format_size(self.file["size"]))
+            self._validate()
 
     def _on_go(self) -> None:
         self.vaultActionRequested.emit(self.mode, self.file["name"], self.password.text(),
