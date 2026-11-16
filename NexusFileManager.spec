@@ -1,13 +1,9 @@
 # -*- mode: python ; coding: utf-8 -*-
 from PyInstaller.utils.hooks import collect_all
 
-datas = [('M:/Dev/Workspaces/FileManager/assets', 'assets')]
+datas = [('M:/Dev/Workspaces/FileManager/assets', 'assets'), ('M:/Dev/Workspaces/FileManager/nexus_file_manager/nexus/assets/icons', 'nexus/assets/icons'), ('M:/Dev/Workspaces/FileManager/nexus_file_manager/nexus', 'nexus'), ('M:/Dev/Workspaces/FileManager/src', 'src')]
 binaries = []
-hiddenimports = ['qtawesome', 'pymupdf', 'PIL', 'cryptography', 'send2trash', 'watchdog', 'openpyxl', 'docx']
-tmp_ret = collect_all('qtawesome')
-datas += tmp_ret[0]; binaries += tmp_ret[1]; hiddenimports += tmp_ret[2]
-tmp_ret = collect_all('pymupdf')
-datas += tmp_ret[0]; binaries += tmp_ret[1]; hiddenimports += tmp_ret[2]
+hiddenimports = ['nexus', 'psutil', 'cryptography', 'send2trash', 'docx', 'openpyxl']
 tmp_ret = collect_all('docx')
 datas += tmp_ret[0]; binaries += tmp_ret[1]; hiddenimports += tmp_ret[2]
 tmp_ret = collect_all('openpyxl')
@@ -15,7 +11,7 @@ datas += tmp_ret[0]; binaries += tmp_ret[1]; hiddenimports += tmp_ret[2]
 
 
 a = Analysis(
-    ['M:/Dev/Workspaces/FileManager/src/main.py'],
+    ['M:/Dev/Workspaces/FileManager/run.py'],
     pathex=[],
     binaries=binaries,
     datas=datas,
