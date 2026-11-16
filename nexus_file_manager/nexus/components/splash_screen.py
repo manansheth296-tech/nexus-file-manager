@@ -4,9 +4,9 @@ NexusSplashScreen – Modern, sleek launcher splash screen displayed during appl
 from __future__ import annotations
 
 from PyQt6.QtCore import QPointF, QRectF, Qt, QTimer
-from PyQt6.QtGui import QFont, QPainter, QPainterPath
+from PyQt6.QtGui import QFont, QPainter, QPainterPath, QPixmap
 from PyQt6.QtWidgets import (QApplication, QHBoxLayout, QLabel,
-                             QProgressBar, QStyle, QVBoxLayout, QWidget)
+                             QProgressBar, QSplashScreen, QStyle, QVBoxLayout, QWidget)
 
 from nexus.assets import icon_loader
 from nexus.components.badge import Badge
@@ -15,16 +15,13 @@ from nexus.tokens.base import FONT_SIZE_MD, FONT_SIZE_SM, FONT_SIZE_XS, SPACE_LG
 from nexus.tokens.color_utils import to_qcolor, with_alpha
 
 
-class NexusSplashScreen(QWidget):
+class NexusSplashScreen(QSplashScreen):
     """Frameless modern launcher splash card with startup metrics and progress bar."""
 
     def __init__(self):
-        super().__init__()
-        self.setWindowFlags(
-            Qt.WindowType.FramelessWindowHint
-            | Qt.WindowType.WindowStaysOnTopHint
-            | Qt.WindowType.SplashScreen
-        )
+        pixmap = QPixmap(500, 300)
+        pixmap.fill(Qt.GlobalColor.transparent)
+        super().__init__(pixmap, Qt.WindowType.WindowStaysOnTopHint | Qt.WindowType.FramelessWindowHint)
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
         self.setFixedSize(500, 300)
 
@@ -117,8 +114,7 @@ class NexusSplashScreen(QWidget):
             main_win.show()
             main_win.raise_()
             main_win.activateWindow()
-            self.close()
-            self.deleteLater()
+            self.finish(main_win)
         QTimer.singleShot(250, _reveal)
 
     def paintEvent(self, event):

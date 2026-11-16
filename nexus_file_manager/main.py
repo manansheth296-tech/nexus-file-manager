@@ -40,7 +40,29 @@ def _open_dialog(win: MainWindow, name: str, query: str, grabbing: bool):
     }[name]()
 
 
+def _install_crash_logger():
+    import sys, traceback
+    from datetime import datetime
+    from pathlib import Path
+    def handle_exception(exc_type, exc_value, exc_traceback):
+        if issubclass(exc_type, KeyboardInterrupt):
+            sys.__excepthook__(exc_type, exc_value, exc_traceback)
+            return
+        log_dir = Path.home() / ".nexus_file_manager"
+        log_dir.mkdir(parents=True, exist_ok=True)
+        log_file = log_dir / "crash.log"
+        try:
+            with open(log_file, "a", encoding="utf-8") as f:
+                f.write(f"\n[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] Unhandled Exception:\n")
+                traceback.print_exception(exc_type, exc_value, exc_traceback, file=f)
+        except Exception:
+            pass
+        sys.__excepthook__(exc_type, exc_value, exc_traceback)
+    sys.excepthook = handle_exception
+
+
 def main(argv: list[str] | None = None) -> int:
+    _install_crash_logger()
     ap = argparse.ArgumentParser(description="Nexus File Manager")
     ap.add_argument("--theme", help="theme name or alias (midnight, converge, daylight, or any catalogue name)")
     ap.add_argument("--gallery", action="store_true", help="open the component gallery instead")
